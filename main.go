@@ -164,7 +164,7 @@ func main() {
 		getDelegations(w, r, db)
 	}).Methods("GET")
 
-	// Récupération des délégations dans une goroutine
+	// Récupération des délégations
 	var wg sync.WaitGroup
 	stopChan := make(chan struct{})
 	wg.Add(1)
@@ -176,7 +176,7 @@ func main() {
 		Handler: r,
 	}
 
-	// Gestion de l'arrêt en douceur
+	// Gestion de l'arrêt
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -192,7 +192,7 @@ func main() {
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Fatalf("Server Shutdown Failed:%+v", err)
 		}
-		wg.Wait() // Attendez que fetchDelegations se termine
+		wg.Wait() // Attend que fetchDelegations se termine
 		fmt.Println("Server stopped")
 	}()
 
