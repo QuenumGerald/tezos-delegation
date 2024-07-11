@@ -28,7 +28,7 @@ type Delegation struct {
 	Timestamp string `json:"timestamp"`
 	Amount    int64  `json:"amount"`
 	Delegator string `json:"delegator"`
-	Block     string `json:"block"`
+	Level     int    `json:"level"`
 }
 
 // initDB initialise la base de données
@@ -42,7 +42,7 @@ func initDB() *sql.DB {
 		timestamp TEXT,
 		amount INT64,
 		delegator TEXT,
-		block TEXT,
+		level INT,
 		PRIMARY KEY (timestamp, delegator))`)
 	if err != nil {
 		log.Fatal(err)
@@ -84,7 +84,7 @@ func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
 				Timestamp string `json:"timestamp"`
 				Amount    int64  `json:"amount"`
 				Sender    Sender `json:"sender"`
-				Block     string `json:"block"`
+				Level     int    `json:"level"`
 			}
 			if err := json.Unmarshal(body, &fetched); err != nil {
 				log.Println("Error unmarshaling:", err)
@@ -94,9 +94,9 @@ func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
 
 			// Insérer les nouvelles délégations dans la base de données
 			for _, f := range fetched {
-				fmt.Printf("Fetched delegation - Timestamp: %s, Amount: %d, Delegator: %s, Block: %s\n", f.Timestamp, f.Amount, f.Sender.Address, f.Block)
-				_, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, block) VALUES (?, ?, ?, ?)",
-					f.Timestamp, f.Amount, f.Sender.Address, f.Block)
+				fmt.Printf("Fetched delegation - Timestamp: %s, Amount: %d, Delegator: %s, Level: %d\n", f.Timestamp, f.Amount, f.Sender.Address, f.Level)
+				_, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?, ?)",
+					f.Timestamp, f.Amount, f.Sender.Address, f.Level)
 				if err != nil {
 					log.Println("Database insert error:", err)
 				}
@@ -115,12 +115,12 @@ func getLastTimestamp(db *sql.DB) string {
 	switch err := row.Scan(&lastTimestamp); err {
 	case sql.ErrNoRows:
 		// Aucun enregistrement, retournez une timestamp par défaut
-		return "2022-01-23T00:00:00Z"
+		return "2023-08-23T00:00:00Z"
 	case nil:
 		return lastTimestamp
 	default:
 		log.Println("Error getting last timestamp:", err)
-		return "2022-01-23T00:00:00Z"
+		return "2023-08-23T00:00:00Z"
 	}
 }
 
@@ -131,9 +131,9 @@ func getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	var err error
 
 	if year != "" {
-		rows, err = db.Query("SELECT * FROM delegations WHERE strftime('%Y', timestamp) = ? ORDER BY timestamp DESC", year)
+		rows, err = db.Query("SELECT timestamp, amount, delegator, level FROM delegations WHERE strftime('%Y', timestamp) = ? ORDER BY timestamp DESC", year)
 	} else {
-		rows, err = db.Query("SELECT * FROM delegations ORDER BY timestamp DESC")
+		rows, err = db.Query("SELECT timestamp, amount, delegator, level FROM delegations ORDER BY timestamp DESC")
 	}
 
 	if err != nil {
@@ -144,7 +144,7 @@ func getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	var delegations []Delegation
 	for rows.Next() {
 		var d Delegation
-		if err := rows.Scan(&d.Timestamp, &d.Amount, &d.Delegator, &d.Block); err != nil {
+		if err := rows.Scan(&d.Timestamp, &d.Amount, &d.Delegator, &d.Level); err != nil {
 			log.Fatal(err)
 		}
 		delegations = append(delegations, d)

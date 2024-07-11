@@ -38,8 +38,8 @@ func TestGetLastTimestamp(t *testing.T) {
 	log.Println("Database cleaned successfully")
 
 	// Insert a test record
-	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, block) VALUES (?, ?, ?, ?)",
-		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", "testBlock")
+	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
+		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", 123456)
 	assert.NoError(t, err, "Error inserting test record")
 
 	log.Println("Test record inserted successfully")
@@ -64,8 +64,8 @@ func TestGetDelegations(t *testing.T) {
 	log.Println("Database cleaned successfully")
 
 	// Insert test records
-	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, block) VALUES (?, ?, ?, ?)",
-		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", "testBlock")
+	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
+		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", 123456)
 	assert.NoError(t, err, "Error inserting test record")
 
 	log.Println("Test record inserted successfully")
@@ -82,7 +82,7 @@ func TestGetDelegations(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code, "Response should be OK")
 
-	expected := `{"data":[{"timestamp":"2023-01-01T00:00:00Z","amount":1000,"delegator":"tz1TestAddress","block":"testBlock"}]}`
+	expected := `{"data":[{"timestamp":"2023-01-01T00:00:00Z","amount":1000,"delegator":"tz1TestAddress","level":123456}]}`
 	assert.JSONEq(t, expected, rr.Body.String(), "Response body should match")
 
 	log.Printf("Response body: %s", rr.Body.String())
@@ -112,8 +112,8 @@ func TestIntegration(t *testing.T) {
 	log.Println("HTTP server started")
 
 	// Insert a test record
-	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, block) VALUES (?, ?, ?, ?)",
-		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", "testBlock")
+	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
+		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", 123456)
 	assert.NoError(t, err, "Error inserting test record")
 
 	log.Println("Test record inserted successfully")
@@ -125,7 +125,7 @@ func TestIntegration(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "Response should be OK")
 
-	expected := `{"data":[{"timestamp":"2023-01-01T00:00:00Z","amount":1000,"delegator":"tz1TestAddress","block":"testBlock"}]}`
+	expected := `{"data":[{"timestamp":"2023-01-01T00:00:00Z","amount":1000,"delegator":"tz1TestAddress","level":123456}]}`
 	bodyBytes, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err, "Error reading response body")
 	assert.JSONEq(t, expected, string(bodyBytes), "Response body should match")
