@@ -31,9 +31,9 @@ type Delegation struct {
 	Level     int    `json:"level"`
 }
 
-// initDB initialise la base de données
+// initDB initialise la base de données et ajoute des index pour améliorer les performances
 func initDB() (*sql.DB, error) {
-	dbPath := "./delegations.db" // You can use an environment variable here
+	dbPath := "./delegations.db"
 	database, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, err
@@ -49,6 +49,17 @@ func initDB() (*sql.DB, error) {
 		return nil, err
 	}
 	_, err = statement.Exec()
+	if err != nil {
+		return nil, err
+	}
+
+	// Ajouter des index pour améliorer les performances des requêtes
+	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_timestamp ON delegations (timestamp)`)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = database.Exec(`CREATE INDEX IF NOT EXISTS idx_delegator ON delegations (delegator)`)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +126,6 @@ func getLastTimestamp(db *sql.DB) string {
 	row := db.QueryRow("SELECT timestamp FROM delegations ORDER BY timestamp DESC LIMIT 1")
 	switch err := row.Scan(&lastTimestamp); err {
 	case sql.ErrNoRows:
-		// Aucun enregistrement, retournez une timestamp par défaut
 		return "2023-08-23T00:00:00Z"
 	case nil:
 		return lastTimestamp
