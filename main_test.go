@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"io"
 	"log"
 	"net/http"
@@ -12,11 +13,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// initTestDB initialise une base de données SQLite en mémoire pour les tests
+func initTestDB() (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		return nil, err
+	}
+
+	statement, err := db.Prepare(`CREATE TABLE IF NOT EXISTS delegations (
+        timestamp TEXT,
+        amount INT64,
+        delegator TEXT,
+        level INT,
+        PRIMARY KEY (timestamp, delegator))`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = statement.Exec()
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
 // Test initDB function
 func TestInitDB(t *testing.T) {
 	log.Println("Starting TestInitDB")
 
-	db := initDB()
+	db, err := initTestDB()
+	assert.NoError(t, err, "Error initializing database")
 	defer db.Close()
 
 	assert.NotNil(t, db, "Database should be initialized")
@@ -28,14 +54,9 @@ func TestInitDB(t *testing.T) {
 func TestGetLastTimestamp(t *testing.T) {
 	log.Println("Starting TestGetLastTimestamp")
 
-	db := initDB()
+	db, err := initTestDB()
+	assert.NoError(t, err, "Error initializing database")
 	defer db.Close()
-
-	// Clean the database before testing
-	_, err := db.Exec("DELETE FROM delegations")
-	assert.NoError(t, err, "Error cleaning the database")
-
-	log.Println("Database cleaned successfully")
 
 	// Insert a test record
 	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
@@ -54,14 +75,9 @@ func TestGetLastTimestamp(t *testing.T) {
 func TestGetDelegations(t *testing.T) {
 	log.Println("Starting TestGetDelegations")
 
-	db := initDB()
+	db, err := initTestDB()
+	assert.NoError(t, err, "Error initializing database")
 	defer db.Close()
-
-	// Clean the database before testing
-	_, err := db.Exec("DELETE FROM delegations")
-	assert.NoError(t, err, "Error cleaning the database")
-
-	log.Println("Database cleaned successfully")
 
 	// Insert test records
 	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
@@ -92,14 +108,9 @@ func TestGetDelegations(t *testing.T) {
 func TestIntegration(t *testing.T) {
 	log.Println("Starting TestIntegration")
 
-	db := initDB()
+	db, err := initTestDB()
+	assert.NoError(t, err, "Error initializing database")
 	defer db.Close()
-
-	// Clean the database before testing
-	_, err := db.Exec("DELETE FROM delegations")
-	assert.NoError(t, err, "Error cleaning the database")
-
-	log.Println("Database cleaned successfully")
 
 	// Start the HTTP server
 	r := mux.NewRouter()

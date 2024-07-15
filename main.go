@@ -32,24 +32,28 @@ type Delegation struct {
 }
 
 // initDB initialise la base de données
-func initDB() *sql.DB {
-	database, err := sql.Open("sqlite3", "./delegations.db")
+func initDB() (*sql.DB, error) {
+	dbPath := "./delegations.db" // You can use an environment variable here
+	database, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	// Crée la table "delegations" si elle n'existe pas encore
-	statement, err := database.Prepare(`CREATE TABLE IF NOT EXISTS delegations (
-		timestamp TEXT,
-		amount INT64,
-		delegator TEXT,
-		level INT,
-		PRIMARY KEY (timestamp, delegator))`)
-	if err != nil {
-		log.Fatal(err)
-	}
-	statement.Exec()
 
-	return database
+	statement, err := database.Prepare(`CREATE TABLE IF NOT EXISTS delegations (
+        timestamp TEXT,
+        amount INT64,
+        delegator TEXT,
+        level INT,
+        PRIMARY KEY (timestamp, delegator))`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = statement.Exec()
+	if err != nil {
+		return nil, err
+	}
+
+	return database, nil
 }
 
 // fetchDelegations récupère les délégations et les stocke dans la base de données
@@ -66,7 +70,7 @@ func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
 			resp, err := http.Get(url)
 			if err != nil {
 				log.Println("Error fetching data:", err)
-				time.Sleep(30 * time.Second) // Attendre avant de réessayer
+				time.Sleep(30 * time.Second)
 				continue
 			}
 
@@ -74,12 +78,11 @@ func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
 			if err != nil {
 				log.Println("Error reading body:", err)
 				resp.Body.Close()
-				time.Sleep(30 * time.Second) // Attendre avant de réessayer
+				time.Sleep(30 * time.Second)
 				continue
 			}
 			resp.Body.Close()
 
-			// Décodage du JSON
 			var fetched []struct {
 				Timestamp string `json:"timestamp"`
 				Amount    int64  `json:"amount"`
@@ -88,21 +91,19 @@ func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
 			}
 			if err := json.Unmarshal(body, &fetched); err != nil {
 				log.Println("Error unmarshaling:", err)
-				time.Sleep(30 * time.Second) // Attendre avant de réessayer
+				time.Sleep(30 * time.Second)
 				continue
 			}
 
-			// Insérer les nouvelles délégations dans la base de données
 			for _, f := range fetched {
 				fmt.Printf("Fetched delegation - Timestamp: %s, Amount: %d, Delegator: %s, Level: %d\n", f.Timestamp, f.Amount, f.Sender.Address, f.Level)
-				_, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?, ?)",
+				_, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
 					f.Timestamp, f.Amount, f.Sender.Address, f.Level)
 				if err != nil {
 					log.Println("Database insert error:", err)
 				}
 			}
 
-			// Pause entre les requêtes pour éviter une boucle infinie
 			time.Sleep(30 * time.Second)
 		}
 	}
@@ -137,7 +138,8 @@ func getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	}
 
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, fmt.Sprintf("Database query error: %v", err), http.StatusInternalServerError)
+		return
 	}
 	defer rows.Close()
 
@@ -145,38 +147,51 @@ func getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB) {
 	for rows.Next() {
 		var d Delegation
 		if err := rows.Scan(&d.Timestamp, &d.Amount, &d.Delegator, &d.Level); err != nil {
-			log.Fatal(err)
+			http.Error(w, fmt.Sprintf("Database scan error: %v", err), http.StatusInternalServerError)
+			return
 		}
 		delegations = append(delegations, d)
 	}
 
+	if err := rows.Err(); err != nil {
+		http.Error(w, fmt.Sprintf("Rows iteration error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	sendJSONResponse(w, http.StatusOK, map[string][]Delegation{"data": delegations})
+}
+
+// sendJSONResponse envoie une réponse JSON uniforme
+func sendJSONResponse(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]Delegation{"data": delegations})
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, fmt.Sprintf("JSON encoding error: %v", err), http.StatusInternalServerError)
+	}
 }
 
 func main() {
-	db := initDB()
+	db, err := initDB()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
 	defer db.Close()
 
-	// Définition des routes
 	r := mux.NewRouter()
 	r.HandleFunc("/xtz/delegations", func(w http.ResponseWriter, r *http.Request) {
 		getDelegations(w, r, db)
 	}).Methods("GET")
 
-	// Récupération des délégations
 	var wg sync.WaitGroup
 	stopChan := make(chan struct{})
 	wg.Add(1)
 	go fetchDelegations(db, &wg, stopChan)
 
-	// Serveur HTTP
 	srv := &http.Server{
 		Addr:    ":8000",
 		Handler: r,
 	}
 
-	// Gestion de l'arrêt
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -185,7 +200,6 @@ func main() {
 
 		close(stopChan)
 
-		// Donnez 10 secondes pour terminer les goroutines
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
