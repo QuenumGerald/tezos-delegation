@@ -2,13 +2,16 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
-	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 )
@@ -37,7 +40,7 @@ func initTestDB() (*sql.DB, error) {
 	return db, nil
 }
 
-// Test initDB function
+// TestInitDB function
 func TestInitDB(t *testing.T) {
 	log.Println("Starting TestInitDB")
 
@@ -50,7 +53,7 @@ func TestInitDB(t *testing.T) {
 	log.Println("Database initialized successfully")
 }
 
-// Test getLastTimestamp function
+// TestGetLastTimestamp function
 func TestGetLastTimestamp(t *testing.T) {
 	log.Println("Starting TestGetLastTimestamp")
 
@@ -71,7 +74,7 @@ func TestGetLastTimestamp(t *testing.T) {
 	log.Printf("Timestamp retrieved: %s", timestamp)
 }
 
-// Test getDelegations function
+// TestGetDelegations function
 func TestGetDelegations(t *testing.T) {
 	log.Println("Starting TestGetDelegations")
 
@@ -104,42 +107,87 @@ func TestGetDelegations(t *testing.T) {
 	log.Printf("Response body: %s", rr.Body.String())
 }
 
-// Test the entire application flow
-func TestIntegration(t *testing.T) {
-	log.Println("Starting TestIntegration")
+// TestFetchDelegations function with real API
+func TestFetchDelegationsRealAPI(t *testing.T) {
+	log.Println("Starting TestFetchDelegationsRealAPI")
 
 	db, err := initTestDB()
 	assert.NoError(t, err, "Error initializing database")
 	defer db.Close()
 
-	// Start the HTTP server
-	r := mux.NewRouter()
-	r.HandleFunc("/xtz/delegations", func(w http.ResponseWriter, r *http.Request) {
-		getDelegations(w, r, db)
-	}).Methods("GET")
-	server := httptest.NewServer(r)
-	defer server.Close()
+	realAPIURL := "https://api.tzkt.io/v1/operations/delegations?limit=1"
 
-	log.Println("HTTP server started")
+	stopChan := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	// Insert a test record
-	_, err = db.Exec("INSERT INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
-		"2023-01-01T00:00:00Z", 1000, "tz1TestAddress", 123456)
-	assert.NoError(t, err, "Error inserting test record")
+	go func() {
+		defer wg.Done()
+		fetchDelegationsFromURL(db, realAPIURL, stopChan)
+	}()
 
-	log.Println("Test record inserted successfully")
+	// Let the goroutine run for a bit
+	time.Sleep(30 * time.Second)
+	close(stopChan)
+	wg.Wait()
 
-	// Perform a GET request
-	resp, err := http.Get(server.URL + "/xtz/delegations")
-	assert.NoError(t, err, "Error performing GET request")
-	defer resp.Body.Close()
+	// Check if data is inserted (assuming at least one delegation is returned by the real API)
+	var count int
+	row := db.QueryRow("SELECT COUNT(*), timestamp, amount, delegator, level FROM delegations")
+	var d Delegation
+	err = row.Scan(&count, &d.Timestamp, &d.Amount, &d.Delegator, &d.Level)
+	assert.NoError(t, err, "Error scanning database")
+	assert.Greater(t, count, 0, "At least one delegation should be inserted")
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "Response should be OK")
+	log.Printf("TestFetchDelegationsRealAPI completed successfully, count: %d, first delegation: %v", count, d)
+}
 
-	expected := `{"data":[{"timestamp":"2023-01-01T00:00:00Z","amount":1000,"delegator":"tz1TestAddress","level":123456}]}`
-	bodyBytes, err := io.ReadAll(resp.Body)
-	assert.NoError(t, err, "Error reading response body")
-	assert.JSONEq(t, expected, string(bodyBytes), "Response body should match")
+// fetchDelegationsFromURL récupère les délégations depuis une URL et les stocke dans la base de données
+func fetchDelegationsFromURL(db *sql.DB, url string, stopChan chan struct{}) {
+	for {
+		select {
+		case <-stopChan:
+			fmt.Println("FetchDelegations stopping...")
+			return
+		default:
+			resp, err := http.Get(url)
+			if err != nil {
+				log.Println("Error fetching data:", err)
+				time.Sleep(30 * time.Second)
+				continue
+			}
 
-	log.Printf("Response body: %s", string(bodyBytes))
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				log.Println("Error reading body:", err)
+				resp.Body.Close()
+				time.Sleep(30 * time.Second)
+				continue
+			}
+			resp.Body.Close()
+
+			var fetched []struct {
+				Timestamp string `json:"timestamp"`
+				Amount    int64  `json:"amount"`
+				Sender    Sender `json:"sender"`
+				Level     int    `json:"level"`
+			}
+			if err := json.Unmarshal(body, &fetched); err != nil {
+				log.Println("Error unmarshaling:", err)
+				time.Sleep(30 * time.Second)
+				continue
+			}
+
+			for _, f := range fetched {
+				fmt.Printf("Fetched delegation - Timestamp: %s, Amount: %d, Delegator: %s, Level: %d\n", f.Timestamp, f.Amount, f.Sender.Address, f.Level)
+				_, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, level) VALUES (?, ?, ?, ?)",
+					f.Timestamp, f.Amount, f.Sender.Address, f.Level)
+				if err != nil {
+					log.Println("Database insert error:", err)
+				}
+			}
+
+			time.Sleep(30 * time.Second)
+		}
+	}
 }

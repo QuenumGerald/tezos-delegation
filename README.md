@@ -19,7 +19,6 @@ This application fetches and stores delegation data from the Tezos blockchain. I
 
 ## Dependencies
 
-- **Go**: The programming language used.
 - **SQLite3**: The database for storing delegation data.
 - **Gorilla Mux**: A HTTP router for Go.
 
@@ -96,131 +95,15 @@ The SQLite database (`delegations.db`) is automatically created in the same dire
 ### Functions
 
 - `initDB()`: Initializes the SQLite database and returns the `*sql.DB` instance. It creates the `delegations` table if it doesn't exist.
-    ```go
-    func initDB() *sql.DB {
-        database, err := sql.Open("sqlite3", "./delegations.db")
-        if err != nil {
-            log.Fatal(err)
-        }
-        statement, err := database.Prepare(\`
-            CREATE TABLE IF NOT EXISTS delegations (
-                timestamp TEXT,
-                amount INT64,
-                delegator TEXT,
-                block TEXT,
-                PRIMARY KEY (timestamp, delegator))
-        \`)
-        if err != nil {
-            log.Fatal(err)
-        }
-        statement.Exec()
-        return database
-    }
-    ```
+    
 
 - `fetchDelegations(db *sql.DB)`: Periodically fetches data from the Tezos API and inserts new delegations into the database.
-    ```go
-    func fetchDelegations(db *sql.DB, wg *sync.WaitGroup, stopChan chan struct{}) {
-        defer wg.Done()
-        for {
-            select {
-            case <-stopChan:
-                fmt.Println("FetchDelegations stopping...")
-                return
-            default:
-                lastTimestamp := getLastTimestamp(db)
-                url := fmt.Sprintf("https://api.tzkt.io/v1/operations/delegations?timestamp.gt=%s&limit=10000", lastTimestamp)
-                resp, err := http.Get(url)
-                if err != nil {
-                    log.Println("Error fetching data:", err)
-                    time.Sleep(30 * time.Second)
-                    continue
-                }
-
-                body, err := io.ReadAll(resp.Body)
-                if err != nil {
-                    log.Println("Error reading body:", err)
-                    resp.Body.Close()
-                    time.Sleep(30 * time.Second)
-                    continue
-                }
-                resp.Body.Close()
-
-                var fetched []struct {
-                    Timestamp string `json:"timestamp"`
-                    Amount    int64  `json:"amount"`
-                    Sender    Sender `json:"sender"`
-                    Block     string `json:"block"`
-                }
-                if err := json.Unmarshal(body, &fetched); err != nil {
-                    log.Println("Error unmarshaling:", err)
-                    time.Sleep(30 * time.Second)
-                    continue
-                }
-
-                for _, f := range fetched {
-                    fmt.Printf("Fetched delegation - Timestamp: %s, Amount: %d, Delegator: %s, Block: %s
-", f.Timestamp, f.Amount, f.Sender.Address, f.Block)
-                    _, err := db.Exec("INSERT OR IGNORE INTO delegations (timestamp, amount, delegator, block) VALUES (?, ?, ?, ?)",
-                        f.Timestamp, f.Amount, f.Sender.Address, f.Block)
-                    if err != nil {
-                        log.Println("Database insert error:", err)
-                    }
-                }
-                time.Sleep(30 * time.Second)
-            }
-        }
-    }
-    ```
-
+    
 - `getLastTimestamp(db *sql.DB)`: Retrieves the most recent timestamp stored in the database.
-    ```go
-    func getLastTimestamp(db *sql.DB) string {
-        var lastTimestamp string
-        row := db.QueryRow("SELECT timestamp FROM delegations ORDER BY timestamp DESC LIMIT 1")
-        switch err := row.Scan(&lastTimestamp); err {
-        case sql.ErrNoRows:
-            return "2022-01-23T00:00:00Z"
-        case nil:
-            return lastTimestamp
-        default:
-            log.Println("Error getting last timestamp:", err)
-            return "2022-01-23T00:00:00Z"
-        }
-    }
-    ```
+    
 
 - `getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB)`: Retrieves delegations from the SQLite database and sends them as a JSON-encoded HTTP response.
-    ```go
-    func getDelegations(w http.ResponseWriter, r *http.Request, db *sql.DB) {
-        year := r.URL.Query().Get("year")
-        var rows *sql.Rows
-        var err error
-
-        if year != "" {
-            rows, err = db.Query("SELECT * FROM delegations WHERE strftime('%Y', timestamp) = ? ORDER BY timestamp DESC", year)
-        } else {
-            rows, err = db.Query("SELECT * FROM delegations ORDER BY timestamp DESC")
-        }
-
-        if err != nil {
-            log.Fatal(err)
-        }
-        defer rows.Close()
-
-        var delegations []Delegation
-        for rows.Next() {
-            var d Delegation
-            if err := rows.Scan(&d.Timestamp, &d.Amount, &d.Delegator, &d.Block); err != nil {
-                log.Fatal(err)
-            }
-            delegations = append(delegations, d)
-        }
-
-        w.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(w).Encode(map[string][]Delegation{"data": delegations})
-    }
-    ```
+    
 
 ## Error Handling
 
