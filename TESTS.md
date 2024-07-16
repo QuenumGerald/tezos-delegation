@@ -1,16 +1,33 @@
 
+# Tests for Tezos Delegation Management Application in Go
+
 ## Table of Contents
 
 1. [Introduction](#introduction)
-2. [Setup](#setup)
-3. [Unit Tests](#unit-tests)
-4. [Integration Tests](#integration-tests)
+2. [Dependencies](#dependencies)
+3. [Setup](#setup)
+4. [Tests](#tests)
+    - [TestInitDB](#testinitdb)
+    - [TestGetLastTimestamp](#testgetlasttimestamp)
+    - [TestGetDelegations](#testgetdelegations)
+    - [TestFetchDelegationsRealAPI](#testfetchdelegationsrealapi)
 5. [Running the Tests](#running-the-tests)
-6. [Logs and Details](#logs-and-details)
+6. [Conclusion](#conclusion)
 
 ## Introduction
 
-This document provides information on how to run unit and integration tests for the Tezos Delegation Management application built in Go. The tests are designed to verify the correct functionality of the application, ensuring that the core features work as expected.
+This document provides information on how to run unit and integration tests for the Tezos Delegation  application built in Go. The tests are designed to verify the correct functionality of the application, ensuring that the core features work as expected.
+
+## Dependencies
+
+- **SQLite3**: The database for storing delegation data.
+- **Gorilla Mux**: A HTTP router for Go.
+- **Testify**: A toolkit with common assertions and mocks that plays nicely with the standard library.
+
+To install these dependencies, use the following command:
+```sh
+go get -u github.com/gorilla/mux github.com/stretchr/testify
+```
 
 ## Setup
 
@@ -21,17 +38,15 @@ Before running the tests, ensure that you have the necessary dependencies instal
     go mod tidy
     ```
 
-2. **Create the Database**:
-    Ensure the SQLite3 database `delegations.db` is initialized and the `delegations` table exists. This is automatically handled by the `initDB` function in the application.
+2. **Create the Test Database**:
+    Ensure the SQLite3 database is initialized in memory for testing purposes. This is automatically handled by the `initTestDB` function in the test code.
 
-## Unit Tests
-
-Unit tests focus on testing individual functions in isolation to ensure they behave correctly.
+## Tests
 
 ### TestInitDB
 
 - **Purpose**: Verify that the database is correctly initialized.
-- **Function**: `initDB()`
+- **Function**: `initTestDB()`
 - **Assertions**:
   - The database connection should be successfully established.
 
@@ -50,21 +65,12 @@ Unit tests focus on testing individual functions in isolation to ensure they beh
   - The HTTP response should be 200 OK.
   - The response body should match the expected JSON format.
 
-## Integration Tests
+### TestFetchDelegationsRealAPI
 
-Integration tests focus on testing the complete workflow of the application, ensuring that different components work together correctly.
-
-### TestIntegration
-
-- **Purpose**: Verify the end-to-end functionality of the application.
-- **Steps**:
-  - Initialize the database.
-  - Start the HTTP server.
-  - Insert a test delegation record.
-  - Perform a GET request to retrieve the delegations.
+- **Purpose**: Verify that the `fetchDelegationsFromURL` function retrieves and stores delegations from the real API.
+- **Function**: `fetchDelegationsFromURL(db *sql.DB, url string, stopChan chan struct{})`
 - **Assertions**:
-  - The HTTP response should be 200 OK.
-  - The response body should match the expected JSON format.
+  - At least one delegation should be inserted into the database.
 
 ## Running the Tests
 
@@ -72,3 +78,8 @@ To run the tests, use the following command in your terminal:
 
 ```sh
 go test -v
+```
+
+## Conclusion
+
+The tests ensure that the application's core functionalities are verified, including database initialization, data retrieval, and integration with the real API. Using an in-memory database ensures that tests are isolated and do not interfere with persistent data.
